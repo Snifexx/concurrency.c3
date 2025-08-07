@@ -6,7 +6,9 @@ fn int main(String[] args) {
     // make3::default_cli_interpret(args);
   BuildCmd cmd;
   cmd.tinit({
-    "echo", "COMPILATION!"
+    "c3c", "compile-run",
+    "-o", "build/test",
+    "src/*", "test/*"
   });
   // cmd.lib("libc");
 
@@ -16,8 +18,8 @@ fn int main(String[] args) {
   // });
   if (make3::@print_err(make3::@go_rebuild_urself(args))) return 1;
   switch (event) {
-    case TEST:
-      if (make3::@print_err(make3::run(test.build()))) return 2;
+    // case TEST:
+    //   if (make3::@print_err(make3::run(test.build()))) return 2;
     default:
       if (make3::@print_err(make3::run(cmd.build()))) return 2;
   }
