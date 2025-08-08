@@ -3,58 +3,43 @@ import concurrency;
 import worker;
 import std::thread;
 import std::io;
+import std::time;
 
 
 fn void main(String[] args) {
   ThreadWorker wk;
   Thread th;
+  Allocator all = &allocator::LIBC_ALLOCATOR;
+
   wk.init_with_close(&th, fn void?(ThreadWorker* self) {
     self.mu.destroy()!;
     self.futures.free();
+    // Some sleep to showcase the detached worker thread finishing after
+    // the main thread.
+    thread::sleep(2 * time::SEC); 
   })!!;
   th.detach()!!;
 
   channel::BufferedChannel {char} ch;
-  ch.init(&allocator::LIBC_ALLOCATOR)!!;
+  ch.init(all)!!;
   defer ch.destroy()!!;
 
-  FutureAnyWrapper{char} inner;
-  inner.init(&&(FutureDone{char}) { .value = 69 });
-
-  FutureChannelWrapper{char} fut = {
-    .inner = &inner,
-    .ch = ch,
-  };
-
-  channel::BufferedChannel {String} ch2;
-  ch2.init(&allocator::LIBC_ALLOCATOR)!!;
-  defer ch2.destroy()!!;
-
-  FutureAnyWrapper{String} inner2;
-  inner2.init(&&(FutureDone{String}) { .value = "Niggers" });
-
-  FutureChannelWrapper{String} fut2 = {
-    .inner = &inner2,
-    .ch = ch2,
-  };
+  Future fut = concurrency::fut()
+    .@done(all, (char)69)
+    .@ch(all, ch);
 
   io::printn("Before scheduling.");
-  wk.schedule(&fut)!!;
-  wk.schedule(&fut2)!!;
+  wk.schedule(fut)!!;
   io::printn("After scheduling.");
 
   char res = ch.pop()!!;
+  io::printn("Closed Channel!");
   ch.close()!!;
-  String res2 = ch2.pop()!!;
-  ch2.close()!!;
+
   wk.mu.@in_lock() {
     wk.stop = true;
   };
   io::printf("Result from future!: %d\n", res);
-  io::printf("Result from future!: %s\n", res2);
-
-  Future futanari;
-  io::printn(futanari.hello());
 
   thread::exit(0);
 }

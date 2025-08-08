@@ -1,5 +1,4 @@
 module concurrency;
-typedef Future = inline IFuture{any};
 
 enum FutureState {
   FINISHED,
@@ -7,9 +6,39 @@ enum FutureState {
   SLEEPING
 }
 
+typedef Future = inline IFuture{any};
+
+macro Future fut() { return (Future){}; }
+
+macro Future Future.@done(self, Allocator all, #val) {
+  var fut_any = allocator::new(all, FutAny{$typeof(#val)});
+  var fut_done = allocator::new(all, FutDone{$typeof(#val)});
+
+  fut_done.all = all;
+  fut_done.value = #val;
+  fut_any.all = all;
+  fut_any.fut = (IFuture{$typeof(#val)})fut_done;
+  return (Future) fut_any;
+}
+
+<*
+  @require $defined(#ch.pop) || $nameof(#ch) == "BufferedChannel"
+*>
+macro Future Future.@ch(self, Allocator all, #ch) {
+  var fut_ch = allocator::new(all, FutChReport{$typeof(#ch.pop()!!)});
+
+  fut_ch.all = all;
+  fut_ch.inner = self;
+  fut_ch.ch = #ch;
+  return (Future) fut_ch;
+}
+
 module concurrency::future {FutRes};
 import std::collections::list;
 import std::thread;
+import std::time;
+
+alias FreeFn = fn void?(IFuture*);
 
 struct Result {
   FutureState state;
@@ -21,16 +50,12 @@ interface IFuture {
   fn void? destroy();
 }
 
-
-struct FutureAnyWrapper (IFuture{any}) {
+struct FutAny (IFuture{any}) {
+  Allocator all;
   IFuture fut;
 }
 
-fn void FutureAnyWrapper.init(&self, IFuture fut) {
-  self.fut = fut;
-}
-
-fn Result{any}? FutureAnyWrapper.poll(&self) @dynamic {
+fn Result{any}? FutAny.poll(&self) @dynamic {
   Result precise_res = self.fut.poll()!;
   return {
     .state = precise_res.state,
@@ -38,16 +63,19 @@ fn Result{any}? FutureAnyWrapper.poll(&self) @dynamic {
   };
 }
 
-fn void? FutureAnyWrapper.destroy(&self) @dynamic @inline {
+fn void? FutAny.destroy(&self) @dynamic @inline {
   self.fut.destroy()!;
+  allocator::free(self.all, self);
 }
 
-struct FutureChannelWrapper (IFuture{any}) {
+struct FutChReport (IFuture{any}) {
   IFuture{any} inner;
   channel::BufferedChannel {FutRes} ch;
+  Allocator all;
 }
 
-fn Result{any}? FutureChannelWrapper.poll(&self) @dynamic {
+
+fn Result{any}? FutChReport.poll(&self) @dynamic {
   Result{any} inner_res = self.inner.poll()!;
   switch (inner_res.state) {
     case FINISHED:
@@ -60,22 +88,26 @@ fn Result{any}? FutureChannelWrapper.poll(&self) @dynamic {
   }
 }
 
-fn void? FutureChannelWrapper.destroy(&self) @dynamic {
+fn void? FutChReport.destroy(&self) @dynamic {
   self.inner.destroy()!;
+  allocator::free(self.all, self);
 }
 
-struct FutureDone (IFuture) {
+struct FutDone (IFuture) {
+  Allocator all;
   FutRes value;
 }
 
-fn Result? FutureDone.poll(&self) @dynamic {
+fn Result? FutDone.poll(&self) @dynamic {
   return {
     .state = FutureState.FINISHED,
     .value = self.value
   };
 }
 
-fn void? FutureDone.destroy(&self) @dynamic {}
+fn void? FutDone.destroy(&self) @dynamic {
+  allocator::free(self.all, self);
+}
 
 
 module worker;
