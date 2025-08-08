@@ -24,9 +24,11 @@ fn void main(String[] args) {
   ch.init(all)!!;
   defer ch.destroy()!!;
 
-  Future fut = concurrency::fut()
-    .@done(all, (char)69)
-    .@ch(all, ch);
+  Future fut = concurrency::future::fut{char}()
+    .@done(all, 69)
+    .@ch(all, ch)
+    .@wrap(all);
+  
 
   io::printn("Before scheduling.");
   wk.schedule(fut)!!;

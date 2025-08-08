@@ -8,30 +8,7 @@ enum FutureState {
 
 typedef Future = inline IFuture{any};
 
-macro Future fut() { return (Future){}; }
-
-macro Future Future.@done(self, Allocator all, #val) {
-  var fut_any = allocator::new(all, FutAny{$typeof(#val)});
-  var fut_done = allocator::new(all, FutDone{$typeof(#val)});
-
-  fut_done.all = all;
-  fut_done.value = #val;
-  fut_any.all = all;
-  fut_any.fut = (IFuture{$typeof(#val)})fut_done;
-  return (Future) fut_any;
-}
-
-<*
-  @require $defined(#ch.pop) || $nameof(#ch) == "BufferedChannel"
-*>
-macro Future Future.@ch(self, Allocator all, #ch) {
-  var fut_ch = allocator::new(all, FutChReport{$typeof(#ch.pop()!!)});
-
-  fut_ch.all = all;
-  fut_ch.inner = self;
-  fut_ch.ch = #ch;
-  return (Future) fut_ch;
-}
+macro Future anyfut() { return (Future){}; }
 
 module concurrency::future {FutRes};
 import std::collections::list;
@@ -39,6 +16,8 @@ import std::thread;
 import std::time;
 
 alias FreeFn = fn void?(IFuture*);
+
+macro IFuture fut() { return (IFuture){}; }
 
 struct Result {
   FutureState state;
@@ -48,6 +27,31 @@ struct Result {
 interface IFuture {
   fn Result? poll();
   fn void? destroy();
+}
+
+macro IFuture IFuture.@done(self, Allocator all, FutRes #val) {
+  var fut_done = allocator::new(all, FutDone{FutRes});
+
+  fut_done.all = all;
+  fut_done.value = #val;
+  return (IFuture) fut_done;
+}
+
+macro IFuture IFuture.@ch(self, Allocator all, BufferedChannel{FutRes} #ch) {
+  var fut_ch = allocator::new(all, FutChReport{FutRes});
+
+  fut_ch.all = all;
+  fut_ch.inner = self;
+  fut_ch.ch = #ch;
+  return (IFuture) fut_ch;
+}
+
+macro Future IFuture.@wrap(self, Allocator all) {
+  var fut_any = allocator::new(all, FutAny{FutRes});
+
+  fut_any.all = all;
+  fut_any.fut = self;
+  return (Future) fut_any;
 }
 
 struct FutAny (IFuture{any}) {
@@ -68,18 +72,18 @@ fn void? FutAny.destroy(&self) @dynamic @inline {
   allocator::free(self.all, self);
 }
 
-struct FutChReport (IFuture{any}) {
-  IFuture{any} inner;
+struct FutChReport (IFuture) {
+  IFuture inner;
   channel::BufferedChannel {FutRes} ch;
   Allocator all;
 }
 
 
-fn Result{any}? FutChReport.poll(&self) @dynamic {
-  Result{any} inner_res = self.inner.poll()!;
+fn Result? FutChReport.poll(&self) @dynamic {
+  Result inner_res = self.inner.poll()!;
   switch (inner_res.state) {
     case FINISHED:
-      self.ch.push(*anycast(inner_res.value, FutRes))!;
+      self.ch.push(inner_res.value)!;
       return {
         .state = FINISHED,
       };
